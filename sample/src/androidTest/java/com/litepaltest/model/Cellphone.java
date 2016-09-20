@@ -3,24 +3,29 @@ package com.litepaltest.model;
 import org.litepal.annotation.Column;
 import org.litepal.crud.DataSupport;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class Cellphone extends DataSupport {
 
 	private Long id;
 
-	private String brand;
+	public String brand;
 
 	private Character inStock;
 
-	private Double price;
+	protected Double price;
 
     @Column(unique = true, nullable = false)
-    private String serial;
+    String serial;
 
     @Column(nullable = true, defaultValue = "0.0.0.0")
     private String mac;
 
     @Column(ignore = true)
     private String uuid;
+
+    private List<WeiboMessage> messages = new ArrayList<>();
 
 	public Long getId() {
 		return id;
@@ -76,5 +81,13 @@ public class Cellphone extends DataSupport {
 
     public void setUuid(String uuid) {
         this.uuid = uuid;
+    }
+
+    public List<WeiboMessage> getMessages() {
+        return messages;
+    }
+
+    public void setMessages(List<WeiboMessage> messages) {
+        this.messages = messages;
     }
 }

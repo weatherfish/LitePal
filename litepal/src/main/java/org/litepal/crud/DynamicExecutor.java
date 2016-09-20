@@ -73,9 +73,16 @@ class DynamicExecutor {
 			return method.invoke(object, parameters);
 		} catch (NoSuchMethodException e) {
 			throw new DataSupportException(DataSupportException.noSuchMethodException(
-					objectClass.getSimpleName(), methodName));
+					objectClass.getSimpleName(), methodName), e);
 		}
 	}
+
+    static void set(Object object, String fieldName, Object value, Class<?> objectClass)
+            throws SecurityException, IllegalArgumentException, IllegalAccessException, NoSuchFieldException {
+        Field objectField = objectClass.getDeclaredField(fieldName);
+        objectField.setAccessible(true);
+        objectField.set(object, value);
+    }
 
 	/**
 	 * This method use java reflect API to set field value dynamically. Most
@@ -96,13 +103,14 @@ class DynamicExecutor {
 	 */
 	static void setField(Object object, String fieldName, Object value, Class<?> objectClass)
 			throws SecurityException, IllegalArgumentException, IllegalAccessException {
+        if (objectClass == DataSupport.class || objectClass == Object.class) {
+            throw new DataSupportException(DataSupportException.noSuchFieldExceptioin(
+                    objectClass.getSimpleName(), fieldName));
+        }
 		try {
-			Field objectField = objectClass.getDeclaredField(fieldName);
-			objectField.setAccessible(true);
-			objectField.set(object, value);
+			set(object, fieldName, value, objectClass);
 		} catch (NoSuchFieldException e) {
-			throw new DataSupportException(DataSupportException.noSuchFieldExceptioin(
-					objectClass.getSimpleName(), fieldName));
+			setField(object, fieldName, value, objectClass.getSuperclass());
 		}
 	}
 
@@ -118,19 +126,21 @@ class DynamicExecutor {
 	 * @param objectClass
 	 *            The class of object.
 	 * @throws SecurityException
-	 * @throws NoSuchFieldException
 	 * @throws IllegalArgumentException
 	 * @throws IllegalAccessException
 	 */
 	static Object getField(Object object, String fieldName, Class<?> objectClass)
 			throws IllegalArgumentException, IllegalAccessException {
+        if (objectClass == DataSupport.class || objectClass == Object.class) {
+            throw new DataSupportException(DataSupportException.noSuchFieldExceptioin(
+                    objectClass.getSimpleName(), fieldName));
+        }
 		try {
 			Field objectField = objectClass.getDeclaredField(fieldName);
 			objectField.setAccessible(true);
 			return objectField.get(object);
 		} catch (NoSuchFieldException e) {
-			throw new DataSupportException(DataSupportException.noSuchFieldExceptioin(
-					objectClass.getSimpleName(), fieldName));
+			return getField(object, fieldName, objectClass.getSuperclass());
 		}
 	}
 

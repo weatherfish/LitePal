@@ -229,7 +229,7 @@ public class DeleteHandler extends DataHandler {
 			analyzeAssociatedModels(baseObj, associationInfos);
 			return associationInfos;
 		} catch (Exception e) {
-			throw new DataSupportException(e.getMessage());
+			throw new DataSupportException(e.getMessage(), e);
 		}
 	}
 
@@ -255,7 +255,7 @@ public class DeleteHandler extends DataHandler {
 					if (associatedModels != null && !associatedModels.isEmpty()) {
 						for (DataSupport model : associatedModels) {
 							if (model != null) {
-								model.resetBaseObjId();
+								model.clearSavedState();
 							}
 						}
 					}
@@ -263,12 +263,12 @@ public class DeleteHandler extends DataHandler {
 					DataSupport model = getAssociatedModel(baseObj,
 							associationInfo);
 					if (model != null) {
-						model.resetBaseObjId();
+						model.clearSavedState();
 					}
 				}
 			}
 		} catch (Exception e) {
-			throw new DataSupportException(e.getMessage());
+			throw new DataSupportException(e.getMessage(), e);
 		}
 	}
 
