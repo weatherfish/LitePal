@@ -255,7 +255,7 @@ song1.setDuration(320);
 song1.setAlbum(album);
 song1.save();
 Song song2 = new Song();
-song2.setName("song2");;
+song2.setName("song2");
 song2.setDuration(356);
 song2.setAlbum(album);
 song2.save();
@@ -307,7 +307,7 @@ List<Song> songs = DataSupport.where("name like ?", "song%").order("duration").f
 ```
 
 ## Developed By
- * Tony Green - tonygreendev@gmail.com
+ * Tony Green
  
 ## Sample App
 The sample app has been published onto Google Play for easy access. 

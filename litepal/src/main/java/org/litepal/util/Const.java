@@ -35,7 +35,7 @@ public interface Const {
 		public static final int MANY_TO_MANY = 3;
 	}
 
-	public interface LitePal {
+	public interface Config {
 		/**
 		 * The suffix for each database file.
 		 */
@@ -87,6 +87,11 @@ public interface Const {
 		 * Constant for intermediate join table.
 		 */
 		public static final int INTERMEDIATE_JOIN_TABLE = 1;
+
+        /**
+         * Constant for generic table.
+         */
+        public static final int GENERIC_TABLE = 2;
 	}
 
 }

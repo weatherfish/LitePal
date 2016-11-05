@@ -23,6 +23,7 @@ import org.litepal.exceptions.DatabaseGenerateException;
 import org.litepal.parser.LitePalAttr;
 import org.litepal.tablemanager.model.AssociationsModel;
 import org.litepal.tablemanager.model.ColumnModel;
+import org.litepal.tablemanager.model.GenericModel;
 import org.litepal.tablemanager.model.TableModel;
 import org.litepal.tablemanager.typechange.BlobOrm;
 import org.litepal.tablemanager.typechange.BooleanOrm;
@@ -76,9 +77,19 @@ public abstract class LitePalBase {
 			new DecimalOrm(), new DateOrm(), new BlobOrm()};
 
     /**
-     * This is map of class name to fields list. Indicates that each class has which fields.
+     * This is map of class name to fields list. Indicates that each class has which supported fields.
      */
     private Map<String, List<Field>> classFieldsMap = new HashMap<String, List<Field>>();
+
+	/**
+	 * This is map of class name to generic fields list. Indicates that each class has which supported generic fields.
+	 */
+    private Map<String, List<Field>> classGenericFieldsMap = new HashMap<String, List<Field>>();
+
+    /**
+     * List contains all supported generic fields after called {@link #getSupportedFields(String)}.
+     */
+    private List<Field> supportedGenericFields = new ArrayList<Field>();
 
 	/**
 	 * The collection contains all association models.
@@ -89,6 +100,11 @@ public abstract class LitePalBase {
 	 * The collection contains all association info.
 	 */
 	private Collection<AssociationsInfo> mAssociationInfos;
+
+    /**
+     * The collection contains all generic models.
+     */
+    private Collection<GenericModel> mGenericModels;
 
 	/**
 	 * This method is used to get the table model by the class name passed
@@ -129,12 +145,24 @@ public abstract class LitePalBase {
 		if (mAssociationModels == null) {
 			mAssociationModels = new HashSet<AssociationsModel>();
 		}
+        if (mGenericModels == null) {
+            mGenericModels = new HashSet<GenericModel>();
+        }
 		mAssociationModels.clear();
+        mGenericModels.clear();
 		for (String className : classNames) {
 			analyzeClassFields(className, GET_ASSOCIATIONS_ACTION);
 		}
 		return mAssociationModels;
 	}
+
+    /**
+     * Get all generic models for create generic tables.
+     * @return All generic models.
+     */
+    protected Collection<GenericModel> getGenericModels() {
+        return mGenericModels;
+    }
 
 	/**
 	 * Get the association info model by the class name.
@@ -160,7 +188,7 @@ public abstract class LitePalBase {
 	 * 
 	 * @param className
 	 *            The full name of the class.
-	 * @return A list of supported fields
+	 * @return A list of supported fields.
 	 */
 	protected List<Field> getSupportedFields(String className) {
         List<Field> fieldList = classFieldsMap.get(className);
@@ -172,11 +200,45 @@ public abstract class LitePalBase {
             } catch (ClassNotFoundException e) {
                 throw new DatabaseGenerateException(DatabaseGenerateException.CLASS_NOT_FOUND + className);
             }
+            supportedGenericFields.clear();
             recursiveSupportedFields(clazz, supportedFields);
             classFieldsMap.put(className, supportedFields);
             return supportedFields;
         }
         return fieldList;
+	}
+
+    /**
+     * Find all supported generic fields in the class. Supporting rule is in {@link BaseUtility#isGenericTypeSupported(String)}.
+     * Remember always call this method after calling {@link #getSupportedFields(String)}, or an empty list will be return.
+     * If you want to get supported generic fields besides {@link #getSupportedFields(String)}, call {@link #getSupportedGenericFields(String)} instead.
+     * @return A list of supported generic fields.
+     */
+    protected List<Field> getSupportedGenericFields() {
+        return supportedGenericFields;
+    }
+
+    /**
+     * Find all supported generic fields in the class. Supporting rule is in {@link BaseUtility#isGenericTypeSupported(String)}.
+     * @param className
+     *           The full name of the class.
+     * @return A list of supported generic fields.
+     */
+	protected List<Field> getSupportedGenericFields(String className) {
+        List<Field> genericFieldList = classGenericFieldsMap.get(className);
+        if (genericFieldList == null) {
+            List<Field> supportedGenericFields = new ArrayList<Field>();
+            Class<?> clazz;
+            try {
+                clazz = Class.forName(className);
+            } catch (ClassNotFoundException e) {
+                throw new DatabaseGenerateException(DatabaseGenerateException.CLASS_NOT_FOUND + className);
+            }
+            recursiveSupportedGenericFields(clazz, supportedGenericFields);
+            classGenericFieldsMap.put(className, supportedGenericFields);
+            return supportedGenericFields;
+        }
+        return genericFieldList;
 	}
 
 	/**
@@ -237,6 +299,42 @@ public abstract class LitePalBase {
 		return BaseUtility.changeCase(associatedTableName + "_id");
 	}
 
+    /**
+     * Get the column type for creating table by field type.
+     * @param fieldType
+     *          Type of field.
+     * @return The column type for creating table.
+     */
+    protected String getColumnType(String fieldType) {
+        String columnType;
+        for (OrmChange ormChange : typeChangeRules) {
+            columnType = ormChange.object2Relation(fieldType);
+            if (columnType != null) {
+                return columnType;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get the generic type class of List or Set. If there's no generic type of
+     * List or Set return null.
+     *
+     * @param field
+     *            A generic type field.
+     * @return The generic type of List or Set.
+     */
+    protected Class<?> getGenericTypeClass(Field field) {
+        Type genericType = field.getGenericType();
+        if (genericType != null) {
+            if (genericType instanceof ParameterizedType) {
+                ParameterizedType parameterizedType = (ParameterizedType) genericType;
+                return (Class<?>) parameterizedType.getActualTypeArguments()[0];
+            }
+        }
+        return null;
+    }
+
     private void recursiveSupportedFields(Class<?> clazz, List<Field> supportedFields) {
         if (clazz == DataSupport.class || clazz == Object.class) {
             return;
@@ -254,11 +352,39 @@ public abstract class LitePalBase {
                     String fieldType = fieldTypeClass.getName();
                     if (BaseUtility.isFieldTypeSupported(fieldType)) {
                         supportedFields.add(field);
+                    } else if (isCollection(field.getType())) {
+                        String genericTypeName = getGenericTypeName(field);
+                        if (BaseUtility.isGenericTypeSupported(genericTypeName)) {
+                            supportedGenericFields.add(field);
+                        }
                     }
                 }
             }
         }
         recursiveSupportedFields(clazz.getSuperclass(), supportedFields);
+    }
+
+    private void recursiveSupportedGenericFields(Class<?> clazz, List<Field> supportedGenericFields) {
+        if (clazz == DataSupport.class || clazz == Object.class) {
+            return;
+        }
+        Field[] fields = clazz.getDeclaredFields();
+        if (fields != null && fields.length > 0) {
+            for (Field field : fields) {
+                Column annotation = field.getAnnotation(Column.class);
+                if (annotation != null && annotation.ignore()) {
+                    continue;
+                }
+                int modifiers = field.getModifiers();
+                if (!Modifier.isStatic(modifiers) && isCollection(field.getType())) {
+                    String genericTypeName = getGenericTypeName(field);
+                    if (BaseUtility.isGenericTypeSupported(genericTypeName)) {
+                        supportedGenericFields.add(field);
+                    }
+                }
+            }
+        }
+        recursiveSupportedGenericFields(clazz.getSuperclass(), supportedGenericFields);
     }
 
 	/**
@@ -471,7 +597,18 @@ public abstract class LitePalBase {
                                 field, null, Const.Model.MANY_TO_ONE);
                     }
                 }
-			}
+			} else if(BaseUtility.isGenericTypeSupported(genericTypeName) && action == GET_ASSOCIATIONS_ACTION) {
+                Column annotation = field.getAnnotation(Column.class);
+                if (annotation != null && annotation.ignore()) {
+                    return;
+                }
+                GenericModel genericModel = new GenericModel();
+                genericModel.setTableName(DBUtility.getGenericTableName(className, field.getName()));
+                genericModel.setValueColumnName(DBUtility.convertFieldNameToColumnName(field.getName()));
+                genericModel.setValueColumnType(getColumnType(genericTypeName));
+                genericModel.setValueIdColumnName(DBUtility.getGenericValueIdColumnName(className));
+                mGenericModels.add(genericModel);
+            }
 		}
 	}
 
@@ -538,16 +675,12 @@ public abstract class LitePalBase {
 	 *            A generic type field.
 	 * @return The name of generic type of List of Set.
 	 */
-	private String getGenericTypeName(Field field) {
-		Type genericType = field.getGenericType();
-		if (genericType != null) {
-			if (genericType instanceof ParameterizedType) {
-				ParameterizedType parameterizedType = (ParameterizedType) genericType;
-				Class<?> genericArg = (Class<?>) parameterizedType.getActualTypeArguments()[0];
-				return genericArg.getName();
-			}
-		}
-		return null;
+	protected String getGenericTypeName(Field field) {
+		Class<?> genericTypeClass = getGenericTypeClass(field);
+        if (genericTypeClass != null) {
+            return genericTypeClass.getName();
+        }
+        return null;
 	}
 
     /**
@@ -558,14 +691,8 @@ public abstract class LitePalBase {
      * @return ColumnModel instance contains column information.
      */
     private ColumnModel convertFieldToColumnModel(Field field) {
-        String columnType = null;
         String fieldType = field.getType().getName();
-        for (OrmChange ormChange : typeChangeRules) {
-            columnType = ormChange.object2Relation(fieldType);
-            if (columnType != null) {
-                break;
-            }
-        }
+        String columnType = getColumnType(fieldType);
         boolean nullable = true;
         boolean unique = false;
         String defaultValue = "";
@@ -576,7 +703,7 @@ public abstract class LitePalBase {
             defaultValue = annotation.defaultValue();
         }
         ColumnModel columnModel = new ColumnModel();
-        columnModel.setColumnName(field.getName());
+        columnModel.setColumnName(DBUtility.convertFieldNameToColumnName(field.getName()));
         columnModel.setColumnType(columnType);
         columnModel.setIsNullable(nullable);
         columnModel.setIsUnique(unique);

@@ -66,6 +66,11 @@ public final class LitePalAttr {
 	 */
 	private List<String> classNames;
 
+    /**
+     * Extra name as key for saving the database version in SharedUtil.
+     */
+	private String extraKeyName;
+
 	/**
 	 * Do not allow new a LitePalAttr object. Makes it a singleton class.
 	 */
@@ -73,9 +78,8 @@ public final class LitePalAttr {
 	}
 
 	/**
-	 * Provide a way to get the object of LitePalAttr class.
-	 * 
-	 * @return the singleton object of LitePalAttr
+	 * Provide a way to get the instance of LitePalAttr.
+	 * @return the singleton instance of LitePalAttr
 	 */
 	public static LitePalAttr getInstance() {
 		if (litePalAttr == null) {
@@ -88,11 +92,26 @@ public final class LitePalAttr {
 		return litePalAttr;
 	}
 
+	/**
+	 * Already has LitePalAttr instance or not.
+	 * @return True if already has LitePalAttr instance. False otherwise.
+     */
+	public static boolean hasInstance() {
+		return litePalAttr != null;
+	}
+
+	/**
+	 * Clear the instance of LitePalAttr.
+	 */
+	public static void clearInstance() {
+		litePalAttr = null;
+	}
+
 	public int getVersion() {
 		return version;
 	}
 
-	void setVersion(int version) {
+	public void setVersion(int version) {
 		this.version = version;
 	}
 
@@ -100,7 +119,7 @@ public final class LitePalAttr {
 		return dbName;
 	}
 
-	void setDbName(String dbName) {
+	public void setDbName(String dbName) {
 		this.dbName = dbName;
 	}
 
@@ -108,11 +127,19 @@ public final class LitePalAttr {
         return storage;
     }
 
-    void setStorage(String storage) {
+	public void setStorage(String storage) {
         this.storage = storage;
     }
 
-	/**
+    public String getExtraKeyName() {
+        return extraKeyName;
+    }
+
+    public void setExtraKeyName(String extraKeyName) {
+        this.extraKeyName = extraKeyName;
+    }
+
+    /**
 	 * Get the class name list. Always add table_schema as a value.
 	 * 
 	 * @return The class name list.
@@ -133,15 +160,19 @@ public final class LitePalAttr {
 	 * @param className
 	 *            Full package class name.
 	 */
-	void addClassName(String className) {
+	public void addClassName(String className) {
 		getClassNames().add(className);
+	}
+
+	public void setClassNames(List<String> classNames) {
+		this.classNames = classNames;
 	}
 
 	public String getCases() {
 		return cases;
 	}
 
-	void setCases(String cases) {
+	public void setCases(String cases) {
 		this.cases = cases;
 	}
 
@@ -149,40 +180,37 @@ public final class LitePalAttr {
 	 * Before application build the connection with database, check the fields
 	 * in LitePalAttr. If all of the fields are passed, the connection will be
 	 * continued.If anyone of them doesn't pass, an exception will be thrown.
-	 * 
-	 * @return If all of the fields are passed, return true. If dbname is
-	 *         undefined, or version is less than 1, or version is earlier than
-	 *         current version, throw InvalidAttributesException
+	 * If dbname is undefined, or version is less than 1, or version is earlier
+	 * than current version, throw InvalidAttributesException.
 	 * 
 	 * @throws org.litepal.exceptions.InvalidAttributesException
 	 */
-	public boolean checkSelfValid() {
+	public void checkSelfValid() {
 		if (TextUtils.isEmpty(dbName)) {
 			throw new InvalidAttributesException(
 					InvalidAttributesException.DBNAME_IS_EMPTY_OR_NOT_DEFINED);
 		}
-		if (!dbName.endsWith(Const.LitePal.DB_NAME_SUFFIX)) {
-			dbName = dbName + Const.LitePal.DB_NAME_SUFFIX;
+		if (!dbName.endsWith(Const.Config.DB_NAME_SUFFIX)) {
+			dbName = dbName + Const.Config.DB_NAME_SUFFIX;
 		}
 		if (version < 1) {
 			throw new InvalidAttributesException(
 					InvalidAttributesException.VERSION_OF_DATABASE_LESS_THAN_ONE);
 		}
-		if (version < SharedUtil.getLastVersion()) {
+		if (version < SharedUtil.getLastVersion(extraKeyName)) {
 			throw new InvalidAttributesException(
 					InvalidAttributesException.VERSION_IS_EARLIER_THAN_CURRENT);
 		}
 		if (TextUtils.isEmpty(cases)) {
-			cases = Const.LitePal.CASES_LOWER;
+			cases = Const.Config.CASES_LOWER;
 		} else {
-			if (!cases.equals(Const.LitePal.CASES_UPPER)
-					&& !cases.equals(Const.LitePal.CASES_LOWER)
-					&& !cases.equals(Const.LitePal.CASES_KEEP)) {
+			if (!cases.equals(Const.Config.CASES_UPPER)
+					&& !cases.equals(Const.Config.CASES_LOWER)
+					&& !cases.equals(Const.Config.CASES_KEEP)) {
 				throw new InvalidAttributesException(cases
 						+ InvalidAttributesException.CASES_VALUE_IS_INVALID);
 			}
 		}
-		return true;
 	}
 
 }

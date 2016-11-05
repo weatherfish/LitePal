@@ -18,6 +18,8 @@ package org.litepal.util;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.litepal.exceptions.DatabaseGenerateException;
 import org.litepal.tablemanager.model.ColumnModel;
@@ -37,7 +39,17 @@ import android.text.TextUtils;
  */
 public class DBUtility {
 
-	/**
+    private static final String SQLITE_KEYWORDS = ",abort,add,after,all,alter,and,as,asc,autoincrement,before,begin,between,by,cascade,check,collate,column,commit,conflict,constraint,create,cross,database,deferrable,deferred,delete,desc,distinct,drop,each,end,escape,except,exclusive,exists,foreign,from,glob,group,having,in,index,inner,insert,intersect,into,is,isnull,join,like,limit,match,natural,not,notnull,null,of,offset,on,or,order,outer,plan,pragma,primary,query,raise,references,regexp,reindex,release,rename,replace,restrict,right,rollback,row,savepoint,select,set,table,temp,temporary,then,to,transaction,trigger,union,unique,update,using,vacuum,values,view,virtual,when,where,";
+
+    private static final String KEYWORDS_COLUMN_SUFFIX = "_lpcolumn";
+
+    private static final String REG_OPERATOR = "\\s*(=|!=|<>|<|>)";
+
+    private static final String REG_FUZZY = "\\s+(not\\s+)?(like|between)\\s+";
+
+    private static final String REG_COLLECTION = "\\s+(not\\s+)?(in|exists)\\s*\\(";
+
+    /**
 	 * Disable to create an instance of DBUtility.
 	 */
 	private DBUtility() {
@@ -115,7 +127,7 @@ public class DBUtility {
 	 */
 	public static String getIntermediateTableName(String tableName, String associatedTableName) {
 		if (!(TextUtils.isEmpty(tableName) || TextUtils.isEmpty(associatedTableName))) {
-			String intermediateTableName = null;
+			String intermediateTableName;
 			if (tableName.toLowerCase().compareTo(associatedTableName.toLowerCase()) <= 0) {
 				intermediateTableName = tableName + "_" + associatedTableName;
 			} else {
@@ -125,6 +137,31 @@ public class DBUtility {
 		}
 		return null;
 	}
+
+    /**
+     * Create generic table name by the concatenation of the class model's table name and simple
+     * generic type name with underline in the middle.
+     * @param className
+     *          Name of the class model.
+     * @param fieldName
+     *          Name of the generic type field.
+     * @return Table name by the concatenation of the class model's table name and simple
+     *         generic type name with underline in the middle.
+     */
+    public static String getGenericTableName(String className, String fieldName) {
+        String tableName = getTableNameByClassName(className);
+        return BaseUtility.changeCase(tableName + "_" + fieldName);
+    }
+
+    /**
+     * The column name for referenced id in generic table.
+     * @param className
+     *          Name of the class model.
+     * @return The column name for referenced id in generic table.
+     */
+    public static String getGenericValueIdColumnName(String className) {
+        return BaseUtility.changeCase(getTableNameByClassName(className) + "_id");
+    }
 
 	/**
 	 * Judge the table name is an intermediate table or not.
@@ -166,6 +203,47 @@ public class DBUtility {
 		}
 		return false;
 	}
+
+    /**
+     * Judge the table name is an generic table or not.
+     *
+     * @param tableName
+     *            Table name in database.
+     * @return Return true if the table name is an generic table. Otherwise
+     *         return false.
+     */
+    public static boolean isGenericTable(String tableName, SQLiteDatabase db) {
+        if (!TextUtils.isEmpty(tableName)) {
+            if (tableName.matches("[0-9a-zA-Z]+_[0-9a-zA-Z]+")) {
+                Cursor cursor = null;
+                try {
+                    cursor = db.query(Const.TableSchema.TABLE_NAME, null, null, null, null, null,
+                            null);
+                    if (cursor.moveToFirst()) {
+                        do {
+                            String tableNameDB = cursor.getString(cursor
+                                    .getColumnIndexOrThrow(Const.TableSchema.COLUMN_NAME));
+                            if (tableName.equalsIgnoreCase(tableNameDB)) {
+                                int tableType = cursor.getInt(cursor
+                                        .getColumnIndexOrThrow(Const.TableSchema.COLUMN_TYPE));
+                                if (tableType == Const.TableSchema.GENERIC_TABLE) {
+                                    return true;
+                                }
+                                break;
+                            }
+                        } while (cursor.moveToNext());
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    if (cursor != null) {
+                        cursor.close();
+                    }
+                }
+            }
+        }
+        return false;
+    }
 
 	/**
 	 * Test if the table name passed in exists in the database. Cases are
@@ -359,6 +437,30 @@ public class DBUtility {
             }
         }
         return columns;
+    }
+
+    public static String convertFieldNameToColumnName(String fieldName) {
+        String fieldNameWithComma = "," + fieldName + ",";
+        if (SQLITE_KEYWORDS.contains(fieldNameWithComma)) {
+            return fieldName + KEYWORDS_COLUMN_SUFFIX;
+        } else {
+            return fieldName;
+        }
+    }
+
+    public static String convertWhereClauseToColumnName(String whereClause) {
+        try {
+            Pattern p = Pattern.compile("(\\w+" + REG_OPERATOR + "|\\w+" + REG_FUZZY + "|\\w+" + REG_COLLECTION + ")");
+            Matcher m = p.matcher(whereClause);
+            while (m.find()) {
+                String result = m.group().replaceAll("(" + REG_OPERATOR + "|" + REG_FUZZY + "|" + REG_COLLECTION + ")", "");
+                System.out.println(result);
+            }
+            return null;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return whereClause;
     }
 
 }

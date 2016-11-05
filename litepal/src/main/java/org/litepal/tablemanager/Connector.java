@@ -35,11 +35,6 @@ import android.database.sqlite.SQLiteDatabase;
 public class Connector {
 
 	/**
-	 * LitePalAttr model.
-	 */
-	private static LitePalAttr mLitePalAttr;
-
-	/**
 	 * The quote of LitePalHelper.
 	 */
 	private static LitePalOpenHelper mLitePalHelper;
@@ -55,8 +50,6 @@ public class Connector {
 	 * operation. It will be improved in the future.
 	 * 
 	 * @return A writable SQLiteDatabase instance
-	 * 
-	 * @throws org.litepal.exceptions.InvalidAttributesException
 	 */
 	public synchronized static SQLiteDatabase getWritableDatabase() {
 		LitePalOpenHelper litePalHelper = buildConnection();
@@ -73,8 +66,6 @@ public class Connector {
 	 * query. It will be improved in the future.
 	 * 
 	 * @return A readable SQLiteDatabase instance.
-	 * 
-	 * @throws org.litepal.exceptions.InvalidAttributesException
 	 */
 	public synchronized static SQLiteDatabase getReadableDatabase() {
 		LitePalOpenHelper litePalHelper = buildConnection();
@@ -88,8 +79,6 @@ public class Connector {
 	 * This is method is alias of getWritableDatabase.
 	 * 
 	 * @return A writable SQLiteDatabase instance
-	 * 
-	 * @throws org.litepal.exceptions.InvalidAttributesException
 	 */
 	public static SQLiteDatabase getDatabase() {
 		return getWritableDatabase();
@@ -109,22 +98,29 @@ public class Connector {
 	 * @throws org.litepal.exceptions.InvalidAttributesException
 	 */
 	private static LitePalOpenHelper buildConnection() {
-		if (mLitePalAttr == null) {
+		if (!LitePalAttr.hasInstance()) {
 			LitePalParser.parseLitePalConfiguration();
-			mLitePalAttr = LitePalAttr.getInstance();
 		}
-		if (mLitePalAttr.checkSelfValid()) {
-			if (mLitePalHelper == null) {
-                String dbName = mLitePalAttr.getDbName();
-                if ("external".equalsIgnoreCase(mLitePalAttr.getStorage())) {
-                    dbName = LitePalApplication.getContext().getExternalFilesDir("") + "/databases/" + dbName;
-                }
-				mLitePalHelper = new LitePalOpenHelper(dbName, mLitePalAttr.getVersion());
+		LitePalAttr litePalAttr = LitePalAttr.getInstance();
+		litePalAttr.checkSelfValid();
+		if (mLitePalHelper == null) {
+			String dbName = litePalAttr.getDbName();
+			if ("external".equalsIgnoreCase(litePalAttr.getStorage())) {
+				dbName = LitePalApplication.getContext().getExternalFilesDir("") + "/databases/" + dbName;
 			}
-			return mLitePalHelper;
-		} else {
-			throw new InvalidAttributesException("Uncaught invalid attributes exception happened");
+			mLitePalHelper = new LitePalOpenHelper(dbName, litePalAttr.getVersion());
 		}
+		return mLitePalHelper;
+	}
+
+	/**
+	 * Never call this method. This is only used by internal.
+	 */
+	public static void clearLitePalOpenHelperInstance() {
+        if (mLitePalHelper != null) {
+            mLitePalHelper.getWritableDatabase().close();
+            mLitePalHelper = null;
+        }
 	}
 
 }

@@ -53,9 +53,9 @@ public class BaseUtility {
 		if (string != null) {
 			LitePalAttr litePalAttr = LitePalAttr.getInstance();
 			String cases = litePalAttr.getCases();
-			if (Const.LitePal.CASES_KEEP.equals(cases)) {
+			if (Const.Config.CASES_KEEP.equals(cases)) {
 				return string;
-			} else if (Const.LitePal.CASES_UPPER.equals(cases)) {
+			} else if (Const.Config.CASES_UPPER.equals(cases)) {
 				return string.toUpperCase(Locale.US);
 			}
 			return string.toLowerCase(Locale.US);
@@ -159,7 +159,7 @@ public class BaseUtility {
 	 * and String are supported.
 	 * 
 	 * @param fieldType
-	 *            Text field type.
+	 *           Type of the field.
 	 * @return Supported return true, not supported return false.
 	 */
 	public static boolean isFieldTypeSupported(String fieldType) {
@@ -192,5 +192,34 @@ public class BaseUtility {
 		}
 		return false;
 	}
+
+    /**
+     * Judge a generic type is supported or not. Currently only basic data types
+     * and String are supported.
+     *
+     * @param genericType
+     *            Type of the generic field.
+     * @return Supported return true, not supported return false.
+     */
+    public static boolean isGenericTypeSupported(String genericType) {
+        if ("java.lang.String".equals(genericType)) {
+            return true;
+        } else if ("java.lang.Integer".equals(genericType)) {
+            return true;
+        } else if ("java.lang.Float".equals(genericType)) {
+            return true;
+        } else if ("java.lang.Double".equals(genericType)) {
+            return true;
+        } else if ("java.lang.Long".equals(genericType)) {
+            return true;
+        } else if ("java.lang.Short".equals(genericType)) {
+            return true;
+        } else if ("java.lang.Boolean".equals(genericType)) {
+            return true;
+        } else if ("java.lang.Character".equals(genericType)) {
+            return true;
+        }
+        return false;
+    }
 
 }
