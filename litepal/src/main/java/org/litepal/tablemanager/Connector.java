@@ -16,9 +16,11 @@
 
 package org.litepal.tablemanager;
 
+import org.litepal.LitePal;
 import org.litepal.LitePalApplication;
 import org.litepal.exceptions.InvalidAttributesException;
 import org.litepal.parser.LitePalAttr;
+import org.litepal.parser.LitePalConfig;
 import org.litepal.parser.LitePalParser;
 
 import android.database.sqlite.SQLiteDatabase;
@@ -57,16 +59,11 @@ public class Connector {
 	}
 
 	/**
-	 * Get a readable SQLiteDatabase.
-	 * 
-	 * There're a lot of ways to operate database in android. But LitePal
-	 * doesn't support using ContentProvider currently. The best way to use
-	 * LitePal well is get the SQLiteDatabase instance and use the methods like
-	 * SQLiteDatabase#query in the SQLiteDatabase class to do the database
-	 * query. It will be improved in the future.
+	 * Deprecated. Using {@link LitePal#getDatabase()} instead.
 	 * 
 	 * @return A readable SQLiteDatabase instance.
 	 */
+    @Deprecated
 	public synchronized static SQLiteDatabase getReadableDatabase() {
 		LitePalOpenHelper litePalHelper = buildConnection();
 		return litePalHelper.getReadableDatabase();
@@ -98,9 +95,6 @@ public class Connector {
 	 * @throws org.litepal.exceptions.InvalidAttributesException
 	 */
 	private static LitePalOpenHelper buildConnection() {
-		if (!LitePalAttr.hasInstance()) {
-			LitePalParser.parseLitePalConfiguration();
-		}
 		LitePalAttr litePalAttr = LitePalAttr.getInstance();
 		litePalAttr.checkSelfValid();
 		if (mLitePalHelper == null) {

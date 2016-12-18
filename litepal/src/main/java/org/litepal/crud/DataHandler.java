@@ -35,13 +35,12 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static org.litepal.util.BaseUtility.changeCase;
 
@@ -123,10 +122,10 @@ abstract class DataHandler extends LitePalBase {
 		List<T> dataList = new ArrayList<T>();
 		Cursor cursor = null;
 		try {
-			List<Field> supportedFields = getSupportedFields(modelClass.getName());
-            List<Field> supportedGenericFields = getSupportedGenericFields();
-			String tableName = getTableName(modelClass);
-			String[] customizedColumns = getCustomizedColumns(columns, foreignKeyAssociations);
+            List<Field> supportedFields = getSupportedFields(modelClass.getName());
+            List<Field> supportedGenericFields = getSupportedGenericFields(modelClass.getName());
+            String[] customizedColumns = DBUtility.convertSelectClauseToValidNames(getCustomizedColumns(columns, supportedGenericFields, foreignKeyAssociations));
+            String tableName = getTableName(modelClass);
 			cursor = mDatabase.query(tableName, customizedColumns, selection, selectionArgs,
 					groupBy, having, orderBy, limit);
 			if (cursor.moveToFirst()) {
@@ -266,7 +265,7 @@ abstract class DataHandler extends LitePalBase {
                 Date date = (Date) fieldValue;
                 fieldValue = date.getTime();
             }
-            Object[] parameters = new Object[] { changeCase(DBUtility.convertFieldNameToColumnName(field.getName())), fieldValue };
+            Object[] parameters = new Object[] { changeCase(DBUtility.convertToValidColumnName(field.getName())), fieldValue };
             Class<?>[] parameterTypes = getParameterTypes(field, fieldValue, parameters);
             DynamicExecutor.send(values, "put", parameters, values.getClass(), parameterTypes);
         }
@@ -283,8 +282,6 @@ abstract class DataHandler extends LitePalBase {
      *            The class of base object.
      * @param field
      *            Field to put into ContentValues.
-     * @oaran fieldValue
-     *            The value of the field.
      * @param values
      *            To store data of current model for persisting or updating.
      * @throws SecurityException
@@ -301,7 +298,7 @@ abstract class DataHandler extends LitePalBase {
             Date date = (Date) fieldValue;
             fieldValue = date.getTime();
         }
-        Object[] parameters = new Object[] { changeCase(DBUtility.convertFieldNameToColumnName(field.getName())), fieldValue };
+        Object[] parameters = new Object[] { changeCase(DBUtility.convertToValidColumnName(field.getName())), fieldValue };
         Class<?>[] parameterTypes = getParameterTypes(field, fieldValue, parameters);
         DynamicExecutor.send(values, "put", parameters, values.getClass(), parameterTypes);
     }
@@ -558,36 +555,6 @@ abstract class DataHandler extends LitePalBase {
 	}
 
 	/**
-	 * Do not suggest use this method to find DataSupport class from hierarchy.
-	 * Try to use DataSupport.class directly.
-	 * 
-	 * Detect the baseObj is an instance of DataSupport or not. If true, return
-	 * the class of DataSupport. Otherwise throw an exception of
-	 * DataSupportException to tell user baseObj is not an instance of
-	 * DataSupport.
-	 * 
-	 * @param baseObj
-	 *            The base object model.
-	 * @return The class of DataSupport or throw DataSupportException.
-	 * @throws DataSupportException
-	 */
-	@Deprecated
-	protected Class<?> findDataSupportClass(DataSupport baseObj) {
-		Class<?> superClass = null;
-		while (true) {
-			superClass = baseObj.getClass().getSuperclass();
-			if (superClass == null || DataSupport.class == superClass) {
-				break;
-			}
-		}
-		if (superClass == null) {
-			throw new DataSupportException(baseObj.getClass().getName()
-					+ DataSupportException.MODEL_IS_NOT_AN_INSTANCE_OF_DATA_SUPPORT);
-		}
-		return superClass;
-	}
-
-	/**
 	 * When executing {@link #takeGetMethodValueByField(DataSupport, java.lang.reflect.Field)} or
 	 * {@link #putSetMethodValueByField(DataSupport, java.lang.reflect.Field, Object)}, the
 	 * dataSupport and field passed in should be protected from null value.
@@ -665,8 +632,10 @@ abstract class DataHandler extends LitePalBase {
 			Class<?>[] types = constructor.getParameterTypes();
 			for (Class<?> parameterType : types) {
 				if (parameterType == modelClass) {
-					key = key + 10000;
-				}
+					key = key + 10000; // plus the key for not using this constructor
+				} else if (parameterType.getName().equals("com.android.tools.fd.runtime.InstantReloadException")) {
+                    key = key + 10000; // plus the key for not using this constructor
+                }
 			}
 			if (map.get(key) == null) {
 				map.put(key, constructor);
@@ -737,7 +706,7 @@ abstract class DataHandler extends LitePalBase {
         } else {
             for (Field field : supportedFields) {
                 String getMethodName = genGetColumnMethod(field);
-                String columnName = isIdColumn(field.getName()) ? "id" : field.getName();
+                String columnName = isIdColumn(field.getName()) ? "id" : DBUtility.convertToValidColumnName(field.getName());
                 int columnIndex = cursor.getColumnIndex(BaseUtility.changeCase(columnName));
                 if (columnIndex != -1) {
                     setToModelByReflection(modelInstance, field, columnIndex, getMethodName, cursor);
@@ -793,7 +762,7 @@ abstract class DataHandler extends LitePalBase {
             GenericModel genericModel = genericModelMap.get(field);
             if (genericModel == null) {
                 tableName = DBUtility.getGenericTableName(baseObj.getClassName(), field.getName());
-                genericValueColumnName = field.getName();
+                genericValueColumnName = DBUtility.convertToValidColumnName(field.getName());
                 genericValueIdColumnName = DBUtility.getGenericValueIdColumnName(baseObj.getClassName());
                 getMethodName = genGetColumnMethod(field);
                 GenericModel model = new GenericModel();
@@ -874,19 +843,6 @@ abstract class DataHandler extends LitePalBase {
 		}
 		return parameterTypes;
 	}
-
-    protected void convertConditions(String... conditions) {
-        if (conditions != null && conditions.length > 0) {
-            String whereClause = conditions[0];
-            Pattern p = Pattern.compile("(\\w+\\s*(=|!=|<>|<|>)|\\w+\\s+(not\\s+)?(like|between)\\s+|\\w+\\s+(not\\s+)?(in|exists)\\s*\\()");
-            Matcher m = p.matcher(whereClause);
-            while (m.find()) {
-                System.out.println(m.group());
-                String result = m.group().replaceAll("(\\s*(=|!=|<>|<|>)|\\s+(not\\s+)?(like|between)\\s+|\\s+(not\\s+)?(in|exists)\\s*\\()", "");
-                System.out.println(result);
-            }
-        }
-    }
 
 	/**
 	 * Each primitive type has a corresponding object type. For example int and
@@ -1184,7 +1140,8 @@ abstract class DataHandler extends LitePalBase {
 	/**
 	 * Customize the passed in columns. If the columns contains an id column
 	 * already, just return it. If contains an _id column, rename it to id. If
-	 * not, an add id column then return.
+	 * not, an add id column then return. If it contains generic columns them
+     * from query and use them in supported generic fields.
 	 * 
 	 * @param columns
 	 *            The original columns that passed in.
@@ -1193,32 +1150,62 @@ abstract class DataHandler extends LitePalBase {
 	 *            model's table.
 	 * @return Customized columns with id column always.
 	 */
-	private String[] getCustomizedColumns(String[] columns, List<AssociationsInfo> foreignKeyAssociations) {
-		if (columns != null) {
-			if (foreignKeyAssociations != null && foreignKeyAssociations.size() > 0) {
-				String[] tempColumns = new String[columns.length + foreignKeyAssociations.size()];
-				System.arraycopy(columns, 0, tempColumns, 0, columns.length);
+	private String[] getCustomizedColumns(String[] columns, List<Field> supportedGenericFields, List<AssociationsInfo> foreignKeyAssociations) {
+		if (columns != null && columns.length > 0) {
+            boolean columnsContainsId = false;
+            List<String> convertList = Arrays.asList(columns);
+            List<String> columnList = new ArrayList<String>(convertList);
+            List<String> supportedGenericFieldNames = new ArrayList<String>();
+            List<Integer> columnToRemove = new ArrayList<Integer>();
+            List<String> genericColumnsForQuery = new ArrayList<String>();
+            List<Field> tempSupportedGenericFields = new ArrayList<Field>();
+
+            for (Field supportedGenericField : supportedGenericFields) {
+                supportedGenericFieldNames.add(supportedGenericField.getName());
+            }
+
+            for (int i = 0; i < columnList.size(); i++) {
+                String columnName = columnList.get(i);
+                // find out all generic columns.
+                if (BaseUtility.containsIgnoreCases(supportedGenericFieldNames, columnName)) {
+                    columnToRemove.add(i);
+                } else if (isIdColumn(columnName)) {
+                    columnsContainsId = true;
+                    if ("_id".equalsIgnoreCase(columnName)) {
+                        columnList.set(i, BaseUtility.changeCase("id"));
+                    }
+                }
+            }
+
+            // remove generic columns cause they can't be used for query
+            for (int i = columnToRemove.size() - 1; i >= 0 ; i--) {
+                int index = columnToRemove.get(i);
+                String genericColumn = columnList.remove(index);
+                genericColumnsForQuery.add(genericColumn);
+            }
+
+            for (Field supportedGenericField : supportedGenericFields) {
+                String fieldName = supportedGenericField.getName();
+                if (BaseUtility.containsIgnoreCases(genericColumnsForQuery, fieldName)) {
+                    tempSupportedGenericFields.add(supportedGenericField);
+                }
+            }
+
+            supportedGenericFields.clear();
+            supportedGenericFields.addAll(tempSupportedGenericFields);
+
+            if (foreignKeyAssociations != null && foreignKeyAssociations.size() > 0) {
 				for (int i = 0; i < foreignKeyAssociations.size(); i++) {
 					String associatedTable = DBUtility
 							.getTableNameByClassName(foreignKeyAssociations.get(i)
 									.getAssociatedClassName());
-					tempColumns[columns.length + i] = getForeignKeyColumnName(associatedTable);
-				}
-				columns = tempColumns;
-			}
-			for (int i = 0; i < columns.length; i++) {
-				String columnName = columns[i];
-				if (isIdColumn(columnName)) {
-					if ("_id".equalsIgnoreCase(columnName)) {
-						columns[i] = BaseUtility.changeCase("id");
-					}
-					return columns;
+                    columnList.add(getForeignKeyColumnName(associatedTable));
 				}
 			}
-			String[] customizedColumns = new String[columns.length + 1];
-			System.arraycopy(columns, 0, customizedColumns, 0, columns.length);
-			customizedColumns[columns.length] = BaseUtility.changeCase("id");
-			return customizedColumns;
+            if (!columnsContainsId) {
+                columnList.add(BaseUtility.changeCase("id"));
+            }
+			return columnList.toArray(new String[columnList.size()]);
 		}
 		return null;
 	}
@@ -1272,6 +1259,7 @@ abstract class DataHandler extends LitePalBase {
 			boolean isM2M = info.getAssociationType() == Const.Model.MANY_TO_MANY;
 			try {
 				List<Field> supportedFields = getSupportedFields(associatedClassName);
+                List<Field> supportedGenericFields = getSupportedGenericFields(associatedClassName);
 				if (isM2M) {
 					String tableName = baseObj.getTableName();
 					String associatedTableName = DBUtility
@@ -1297,11 +1285,13 @@ abstract class DataHandler extends LitePalBase {
 				}
 				if (cursor != null && cursor.moveToFirst()) {
                     SparseArray<QueryInfoCache> queryInfoCacheSparseArray = new SparseArray<QueryInfoCache>();
+                    Map<Field, GenericModel> genericModelMap = new HashMap<Field, GenericModel>();
 					do {
 						DataSupport modelInstance = (DataSupport) createInstanceFromClass(Class.forName(associatedClassName));
 						giveBaseObjIdValue(modelInstance,
 								cursor.getLong(cursor.getColumnIndexOrThrow("id")));
 						setValueToModel(modelInstance, supportedFields, null, cursor, queryInfoCacheSparseArray);
+                        setGenericValueToModel(modelInstance, supportedGenericFields, genericModelMap);
 						if (info.getAssociationType() == Const.Model.MANY_TO_ONE || isM2M) {
 							Collection collection = (Collection) takeGetMethodValueByField(baseObj,
 									info.getAssociateOtherModelFromSelf());
@@ -1312,6 +1302,7 @@ abstract class DataHandler extends LitePalBase {
 						}
 					} while (cursor.moveToNext());
                     queryInfoCacheSparseArray.clear();
+                    genericModelMap.clear();
 				}
 			} catch (Exception e) {
 				throw new DataSupportException(e.getMessage(), e);

@@ -84,7 +84,7 @@ class SaveHandler extends DataHandler {
 			NoSuchMethodException, IllegalAccessException, InvocationTargetException {
 		String className = baseObj.getClassName();
 		List<Field> supportedFields = getSupportedFields(className);
-        List<Field> supportedGenericFields = getSupportedGenericFields();
+        List<Field> supportedGenericFields = getSupportedGenericFields(className);
 		Collection<AssociationsInfo> associationInfos = getAssociationInfo(className);
 		if (!baseObj.isSaved()) {
             if (!ignoreAssociations) {
@@ -146,7 +146,7 @@ class SaveHandler extends DataHandler {
 			DataSupport firstObj = array[0];
 			String className = firstObj.getClassName();
 			List<Field> supportedFields = getSupportedFields(className);
-            List<Field> supportedGenericFields = getSupportedGenericFields();
+            List<Field> supportedGenericFields = getSupportedGenericFields(className);
 			Collection<AssociationsInfo> associationInfos = getAssociationInfo(className);
 			for (DataSupport baseObj : array) {
 				if (!baseObj.isSaved()) {
@@ -229,6 +229,9 @@ class SaveHandler extends DataHandler {
 	 * @return The row ID of the newly inserted row, or -1 if an error occurred.
 	 */
 	private long saving(DataSupport baseObj, ContentValues values) {
+        if (values.size() == 0) {
+            values.putNull("id");
+        }
 		return mDatabase.insert(baseObj.getTableName(), null, values);
 	}
 
@@ -567,7 +570,7 @@ class SaveHandler extends DataHandler {
                 for (Object object : collection) {
                     ContentValues values = new ContentValues();
                     values.put(genericValueIdColumnName, id);
-                    Object[] parameters = new Object[] { changeCase(DBUtility.convertFieldNameToColumnName(field.getName())), object };
+                    Object[] parameters = new Object[] { changeCase(DBUtility.convertToValidColumnName(field.getName())), object };
                     Class<?>[] parameterTypes = new Class[] { String.class, getGenericTypeClass(field) };
                     DynamicExecutor.send(values, "put", parameters, values.getClass(), parameterTypes);
                     mDatabase.insert(tableName, null, values);

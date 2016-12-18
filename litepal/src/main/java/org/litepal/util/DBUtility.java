@@ -16,18 +16,18 @@
 
 package org.litepal.util;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.text.TextUtils;
 
 import org.litepal.exceptions.DatabaseGenerateException;
 import org.litepal.tablemanager.model.ColumnModel;
 import org.litepal.tablemanager.model.TableModel;
 
-import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
-import android.text.TextUtils;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * A utility class to help LitePal with some database actions. These actions can
@@ -38,6 +38,8 @@ import android.text.TextUtils;
  * @since 1.0
  */
 public class DBUtility {
+
+    private static final String TAG = "DBUtility";
 
     private static final String SQLITE_KEYWORDS = ",abort,add,after,all,alter,and,as,asc,autoincrement,before,begin,between,by,cascade,check,collate,column,commit,conflict,constraint,create,cross,database,deferrable,deferred,delete,desc,distinct,drop,each,end,escape,except,exclusive,exists,foreign,from,glob,group,having,in,index,inner,insert,intersect,into,is,isnull,join,like,limit,match,natural,not,notnull,null,of,offset,on,or,order,outer,plan,pragma,primary,query,raise,references,regexp,reindex,release,rename,replace,restrict,right,rollback,row,savepoint,select,set,table,temp,temporary,then,to,transaction,trigger,union,unique,update,using,vacuum,values,view,virtual,when,where,";
 
@@ -439,28 +441,131 @@ public class DBUtility {
         return columns;
     }
 
-    public static String convertFieldNameToColumnName(String fieldName) {
-        String fieldNameWithComma = "," + fieldName + ",";
-        if (SQLITE_KEYWORDS.contains(fieldNameWithComma)) {
-            return fieldName + KEYWORDS_COLUMN_SUFFIX;
-        } else {
-            return fieldName;
+    /**
+     * If the field name is conflicted with SQLite keywords. Return true if conflicted, return false
+     * otherwise.
+     * @param fieldName
+     *          Name of the field.
+     * @return True if conflicted, false otherwise.
+     */
+    public static boolean isFieldNameConflictWithSQLiteKeywords(String fieldName) {
+        if (!TextUtils.isEmpty(fieldName)) {
+            String fieldNameWithComma = "," + fieldName.toLowerCase() + ",";
+            if (SQLITE_KEYWORDS.contains(fieldNameWithComma)) {
+                return true;
+            }
         }
+        return false;
     }
 
+    /**
+     * Convert the passed in name to valid column name if the name is conflicted with SQLite keywords.
+     * The convert rule is to append {@link #KEYWORDS_COLUMN_SUFFIX} to the name as new column name.
+     * @param columnName
+     *          Original column name.
+     * @return Converted name as new column name if conflicted with SQLite keywords.
+     */
+    public static String convertToValidColumnName(String columnName) {
+        if (isFieldNameConflictWithSQLiteKeywords(columnName)) {
+            return columnName + KEYWORDS_COLUMN_SUFFIX;
+        }
+        return columnName;
+    }
+
+    /**
+     * Convert the where clause if it contains invalid column names which conflict with SQLite keywords.
+     * @param whereClause
+     *          where clause for query, update or delete.
+     * @return Converted where clause with valid column names.
+     */
     public static String convertWhereClauseToColumnName(String whereClause) {
         try {
+            StringBuffer convertedWhereClause = new StringBuffer();
             Pattern p = Pattern.compile("(\\w+" + REG_OPERATOR + "|\\w+" + REG_FUZZY + "|\\w+" + REG_COLLECTION + ")");
             Matcher m = p.matcher(whereClause);
             while (m.find()) {
-                String result = m.group().replaceAll("(" + REG_OPERATOR + "|" + REG_FUZZY + "|" + REG_COLLECTION + ")", "");
-                System.out.println(result);
+                String matches = m.group();
+                String column = matches.replaceAll("(" + REG_OPERATOR + "|" + REG_FUZZY + "|" + REG_COLLECTION + ")", "");
+                String rest = matches.replace(column, "");
+                column = convertToValidColumnName(column);
+                m.appendReplacement(convertedWhereClause, column + rest);
             }
-            return null;
+            m.appendTail(convertedWhereClause);
+            return convertedWhereClause.toString();
         } catch (Exception e) {
             e.printStackTrace();
         }
         return whereClause;
+    }
+
+    /**
+     * Convert the select clause if it contains invalid column names which conflict with SQLite keywords.
+     * @param columns
+     *          A String array of which columns to return. Passing null will
+     *          return all columns.
+     * @return Converted select clause with valid column names.
+     */
+    public static String[] convertSelectClauseToValidNames(String[] columns) {
+        if (columns != null && columns.length > 0) {
+            String[] convertedColumns = new String[columns.length];
+            for (int i = 0; i < columns.length; i++) {
+                convertedColumns[i] = convertToValidColumnName(columns[i]);
+            }
+            return convertedColumns;
+        }
+        return null;
+    }
+
+    /**
+     * Convert the order by clause if it contains invalid column names which conflict with SQLite keywords.
+     * @param orderBy
+     *          How to order the rows, formatted as an SQL ORDER BY clause. Passing null will use
+     *          the default sort order, which may be unordered.
+     * @return Converted order by clause with valid column names.
+     */
+    public static String convertOrderByClauseToValidName(String orderBy) {
+        if (!TextUtils.isEmpty(orderBy)) {
+            orderBy = orderBy.trim().toLowerCase();
+            if (orderBy.contains(",")) {
+                String[] orderByItems = orderBy.split(",");
+                StringBuilder builder = new StringBuilder();
+                boolean needComma = false;
+                for (String orderByItem : orderByItems) {
+                    if (needComma) {
+                        builder.append(",");
+                    }
+                    builder.append(convertOrderByItem(orderByItem));
+                    needComma = true;
+                }
+                orderBy = builder.toString();
+            } else {
+                orderBy = convertOrderByItem(orderBy);
+            }
+            return orderBy;
+        }
+        return null;
+    }
+
+    /**
+     * Convert the order by item if it is invalid column name which conflict with SQLite keywords.
+     * @param orderByItem
+     *          The single order by condition.
+     * @return Converted order by item with valid column name.
+     */
+    private static String convertOrderByItem(String orderByItem) {
+        String column = null;
+        String append = null;
+        if (orderByItem.endsWith("asc")) {
+            column = orderByItem.replace("asc", "").trim();
+            append = " asc";
+        } else if (orderByItem.endsWith("desc")) {
+            column = orderByItem.replace("desc", "").trim();
+            append = " desc";
+        } else {
+            column = orderByItem;
+            append = "";
+        }
+        return convertToValidColumnName(column) + append;
     }
 
 }

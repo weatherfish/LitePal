@@ -16,20 +16,22 @@
 
 package org.litepal.crud;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import android.content.ContentValues;
+import android.database.sqlite.SQLiteDatabase;
+import android.os.Build;
 
 import org.litepal.crud.model.AssociationsInfo;
 import org.litepal.exceptions.DataSupportException;
 import org.litepal.util.BaseUtility;
 import org.litepal.util.DBUtility;
 
-import android.content.ContentValues;
-import android.database.sqlite.SQLiteDatabase;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.litepal.util.BaseUtility.changeCase;
 
@@ -73,7 +75,7 @@ class UpdateHandler extends DataHandler {
 	int onUpdate(DataSupport baseObj, long id) throws SecurityException, IllegalArgumentException,
 			NoSuchMethodException, IllegalAccessException, InvocationTargetException {
 		List<Field> supportedFields = getSupportedFields(baseObj.getClassName());
-		List<Field> supportedGenericFields = getSupportedGenericFields();
+		List<Field> supportedGenericFields = getSupportedGenericFields(baseObj.getClassName());
         updateGenericTables(baseObj, supportedGenericFields, id);
 		ContentValues values = new ContentValues();
 		putFieldsValue(baseObj, supportedFields, values);
@@ -100,7 +102,8 @@ class UpdateHandler extends DataHandler {
 	 */
 	int onUpdate(Class<?> modelClass, long id, ContentValues values) {
 		if (values.size() > 0) {
-			return mDatabase.update(getTableName(modelClass), values, "id = " + id, null);
+            convertContentValues(values);
+            return mDatabase.update(getTableName(modelClass), values, "id = " + id, null);
 		}
 		return 0;
 	}
@@ -127,8 +130,12 @@ class UpdateHandler extends DataHandler {
 	int onUpdateAll(DataSupport baseObj, String... conditions) throws SecurityException,
 			IllegalArgumentException, NoSuchMethodException, IllegalAccessException,
 			InvocationTargetException {
+        BaseUtility.checkConditionsCorrect(conditions);
+        if (conditions != null && conditions.length > 0) {
+            conditions[0] = DBUtility.convertWhereClauseToColumnName(conditions[0]);
+        }
 		List<Field> supportedFields = getSupportedFields(baseObj.getClassName());
-        List<Field> supportedGenericFields = getSupportedGenericFields();
+        List<Field> supportedGenericFields = getSupportedGenericFields(baseObj.getClassName());
         long[] ids = null;
         if (!supportedGenericFields.isEmpty()) {
             List<DataSupport> list = (List<DataSupport>) DataSupport.select("id").where(conditions).find(baseObj.getClass());
@@ -164,6 +171,11 @@ class UpdateHandler extends DataHandler {
 	 * @return The number of rows affected.
 	 */
 	int onUpdateAll(String tableName, ContentValues values, String... conditions) {
+        BaseUtility.checkConditionsCorrect(conditions);
+        if (conditions != null && conditions.length > 0) {
+            conditions[0] = DBUtility.convertWhereClauseToColumnName(conditions[0]);
+        }
+        convertContentValues(values);
 		return doUpdateAllAction(tableName, values, conditions);
 	}
 
@@ -211,13 +223,22 @@ class UpdateHandler extends DataHandler {
 				if (!isIdColumn(name)) {
 					fieldName = name;
 					Field field = emptyModelClass.getDeclaredField(fieldName);
-                    if (ids != null && ids.length > 0 && isCollection(field.getType())) {
-                        String genericTypeName = getGenericTypeName(field);
-                        if (BaseUtility.isGenericTypeSupported(genericTypeName)) {
-                            String tableName = DBUtility.getGenericTableName(baseObj.getClassName(), field.getName());
-                            String genericValueIdColumnName = DBUtility.getGenericValueIdColumnName(baseObj.getClassName());
-                            for (long id : ids) {
-                                mDatabase.delete(tableName, genericValueIdColumnName + " = ?", new String[] {String.valueOf(id)});
+                    if (isCollection(field.getType())) {
+                        if (ids != null && ids.length > 0) {
+                            String genericTypeName = getGenericTypeName(field);
+                            if (BaseUtility.isGenericTypeSupported(genericTypeName)) {
+                                String tableName = DBUtility.getGenericTableName(baseObj.getClassName(), field.getName());
+                                String genericValueIdColumnName = DBUtility.getGenericValueIdColumnName(baseObj.getClassName());
+                                StringBuilder whereClause = new StringBuilder();
+                                boolean needOr = false;
+                                for (long id : ids) {
+                                    if (needOr) {
+                                        whereClause.append(" or ");
+                                    }
+                                    whereClause.append(genericValueIdColumnName).append(" = ").append(id);
+                                    needOr = true;
+                                }
+                                mDatabase.delete(tableName, whereClause.toString(), null);
                             }
                         }
                     } else {
@@ -320,11 +341,59 @@ class UpdateHandler extends DataHandler {
                         for (Object object : collection) {
                             ContentValues values = new ContentValues();
                             values.put(genericValueIdColumnName, id);
-                            Object[] parameters = new Object[] { DBUtility.convertFieldNameToColumnName(changeCase(field.getName())), object };
+                            Object[] parameters = new Object[] { DBUtility.convertToValidColumnName(changeCase(field.getName())), object };
                             Class<?>[] parameterTypes = new Class[] { String.class, getGenericTypeClass(field) };
                             DynamicExecutor.send(values, "put", parameters, values.getClass(), parameterTypes);
                             mDatabase.insert(tableName, null, values);
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The keys in ContentValues may be put as valid in Java but invalid in database. So convert
+     * them into valid keys.
+     * @param values
+     *          A map from column names to new column values. null is a valid
+     *            value that will be translated to NULL.
+     */
+    private void convertContentValues(ContentValues values) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+            Map<String, Object> valuesToConvert = new HashMap<String, Object>();
+            for (String key : values.keySet()) {
+                if (DBUtility.isFieldNameConflictWithSQLiteKeywords(key)) {
+                    Object object = values.get(key);
+                    valuesToConvert.put(key, object);
+                }
+            }
+            for (String key : valuesToConvert.keySet()) {
+                String convertedKey = DBUtility.convertToValidColumnName(key);
+                Object object = values.get(key);
+                values.remove(key);
+                if (object == null) {
+                    values.putNull(convertedKey);
+                } else {
+                    String className = object.getClass().getName();
+                    if ("java.lang.Byte".equals(className)) {
+                        values.put(convertedKey, (Byte) object);
+                    } else if ("[B".equals(className)) {
+                        values.put(convertedKey, (byte[]) object);
+                    } else if ("java.lang.Boolean".equals(className)) {
+                        values.put(convertedKey, (Boolean) object);
+                    } else if ("java.lang.String".equals(className)) {
+                        values.put(convertedKey, (String) object);
+                    } else if ("java.lang.Float".equals(className)) {
+                        values.put(convertedKey, (Float) object);
+                    } else if ("java.lang.Long".equals(className)) {
+                        values.put(convertedKey, (Long) object);
+                    } else if ("java.lang.Integer".equals(className)) {
+                        values.put(convertedKey, (Integer) object);
+                    } else if ("java.lang.Short".equals(className)) {
+                        values.put(convertedKey, (Short) object);
+                    } else if ("java.lang.Double".equals(className)) {
+                        values.put(convertedKey, (Double) object);
                     }
                 }
             }
