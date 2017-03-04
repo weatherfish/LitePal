@@ -332,7 +332,7 @@ public abstract class AssociationCreator extends Generator {
 		} else {
 			sqls.add(generateCreateTableSQL(intermediateTableName, columnModelList, false));
 		}
-		execute(sqls.toArray(new String[0]), db);
+		execute(sqls, db);
 		giveTableSchemaACopy(intermediateTableName, Const.TableSchema.INTERMEDIATE_JOIN_TABLE, db);
 	}
 
@@ -370,7 +370,7 @@ public abstract class AssociationCreator extends Generator {
         } else {
             sqls.add(generateCreateTableSQL(tableName, columnModelList, false));
         }
-        execute(sqls.toArray(new String[0]), db);
+        execute(sqls, db);
         giveTableSchemaACopy(tableName, Const.TableSchema.GENERIC_TABLE, db);
     }
 
@@ -405,7 +405,8 @@ public abstract class AssociationCreator extends Generator {
                     ColumnModel columnModel = new ColumnModel();
                     columnModel.setColumnName(foreignKeyColumn);
                     columnModel.setColumnType("integer");
-					String[] sqls = { generateAddColumnSQL(tableHoldsForeignKey, columnModel) };
+                    List<String> sqls = new ArrayList<String>();
+                    sqls.add(generateAddColumnSQL(tableHoldsForeignKey, columnModel));
 					execute(sqls, db);
 				} else {
 					LogUtil.d(TAG, "column " + foreignKeyColumn

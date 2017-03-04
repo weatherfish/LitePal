@@ -71,7 +71,7 @@ public class ColumnModel {
         return isNullable;
     }
 
-    public void setIsNullable(boolean isNullable) {
+    public void setNullable(boolean isNullable) {
         this.isNullable = isNullable;
     }
 
@@ -79,7 +79,7 @@ public class ColumnModel {
         return isUnique;
     }
 
-    public void setIsUnique(boolean isUnique) {
+    public void setUnique(boolean isUnique) {
         this.isUnique = isUnique;
     }
 

@@ -684,8 +684,8 @@ public abstract class LitePalBase {
         ColumnModel columnModel = new ColumnModel();
         columnModel.setColumnName(DBUtility.convertToValidColumnName(field.getName()));
         columnModel.setColumnType(columnType);
-        columnModel.setIsNullable(nullable);
-        columnModel.setIsUnique(unique);
+        columnModel.setNullable(nullable);
+        columnModel.setUnique(unique);
         columnModel.setDefaultValue(defaultValue);
         return columnModel;
     }
